@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Voting Terdistribusi (RPC Pattern)</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f6; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
+        .container { background: white; padding: 2rem; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); width: 100%; max-width: 400px; }
+        h2 { text-align: center; color: #333; margin-bottom: 1.5rem; }
+        .kandidat-item { border: 2px solid #eee; border-radius: 8px; padding: 15px; margin-bottom: 10px; cursor: pointer; transition: 0.3s; font-weight: bold; text-align: center; }
+        .kandidat-item:hover { border-color: #007bff; background: #f0f7ff; }
+        .selected { border-color: #007bff; background: #e7f1ff; color: #007bff; }
+        input { width: 100%; padding: 12px; margin: 1rem 0; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; font-size: 1rem; }
+        button { width: 100%; padding: 12px; background-color: #007bff; color: white; border: none; border-radius: 6px; font-size: 1rem; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        button:hover { background-color: #0056b3; }
+        #status-msg { margin-top: 1rem; text-align: center; font-size: 0.9rem; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2>🗳️ E-Voting Mahasiswa (RPC)</h2>
+        <div id="kandidat-list">
+            </div>
+        <input type="text" id="token-input" placeholder="Masukkan Kode Token (Contoh: VOTE1)">
+        <button onclick="eksekusiVoting()">Kirim Suara Sekarang</button>
+        <div id="status-msg"></div>
+    </div>
+
+    <script>
+        // ==========================================
+        // ELEMENT RPC: CLIENT STUB (PROXY)
+        // ==========================================
+        // Objek ini menyembunyikan detail jaringan (fetch, URL, method) dari UI utama.
+        const RemoteVotingService = {
+            // Karena dijalankan di localhost/IP server yang sama, kita bisa pakai string kosong ""
+            // Jika suatu saat url API berubah, cukup ganti di satu baris ini saja.
+            baseUrl: "", 
+
+            async ambilDaftarKandidat() {
+                const response = await fetch(`${this.baseUrl}/api/kandidat`);
+                if (!response.ok) throw new Error("Gagal mengambil data dari remote server");
+                return await response.json(); // Mengembalikan data hasil unmarshalling
+            },
+
+            async kirimSuaraProsedur(tokenCode, kandidatId) {
+                // Proses Marshalling: Mengubah argumen fungsi menjadi payload JSON
+                const response = await fetch(`${this.baseUrl}/api/vote`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token: tokenCode, kandidat_id: kandidatId })
+                });
+                
+                const data = await response.json();
+                if (!response.ok) {
+                    throw new Error(data.detail || "Eksekusi prosedur gagal");
+                }
+                return data;
+            }
+        };
+
+        // ==========================================
+        // LOGIKA ANTARMUKA / KODE UTAMA (UI LAYER)
+        // ==========================================
+        // Lapisan ini murni mengurus tampilan tanpa tahu kerumitan HTTP/fetch.
+        let kandidatTerpilih = null;
+
+        async function inisialisasiAplikasi() {
+            try {
+                // Memanggil fungsi jarak jauh seolah-olah fungsi lokal lewat Stub
+                const daftarKandidat = await RemoteVotingService.ambilDaftarKandidat();
+                const listContainer = document.getElementById('kandidat-list');
+                
+                daftarKandidat.forEach(k => {
+                    const item = document.createElement('div');
+                    item.className = 'kandidat-item';
+                    item.innerText = k.nama;
+                    item.onclick = () => {
+                        document.querySelectorAll('.kandidat-item').forEach(el => el.classList.remove('selected'));
+                        item.classList.add('selected');
+                        kandidatTerpilih = k.id;
+                    };
+                    listContainer.appendChild(item);
+                });
+            } catch (err) {
+                console.error("RPC Error:", err.message);
+            }
+        }
+
+        async function eksekusiVoting() {
+            const token = document.getElementById('token-input').value;
+            const msg = document.getElementById('status-msg');
+
+            if (!kandidatTerpilih || !token) {
+                msg.innerText = "❌ Pilih kandidat dan masukkan token!";
+                msg.style.color = "red";
+                return;
+            }
+
+            try {
+                // Memanggil Prosedur Remote secara transparan
+                const result = await RemoteVotingService.kirimSuaraProsedur(token, kandidatTerpilih);
+                
+                msg.innerText = "✅ " + result.message;
+                msg.style.color = "green";
+                document.getElementById('token-input').value = "";
+            } catch (err) {
+                msg.innerText = "⚠️ " + err.message;
+                msg.style.color = "orange";
+            }
+        }
+
+        // Jalankan saat halaman dibuka
+        inisialisasiAplikasi();
+    </script>
+</body>
+</html>
